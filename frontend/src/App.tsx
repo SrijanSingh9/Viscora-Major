@@ -96,12 +96,24 @@ function App() {
   const handleAuth = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
+    
+    // Ensure you replaced http://127.0.0.1:8000 with your exact Render URL (and keep the trailing slash!)
     const url = isLoginView ? "https://viscora-backend.onrender.com/api/login/" : "https://viscora-backend.onrender.com/api/signup/";
     const payload = isLoginView ? { username: email, password } : { first_name: firstName, last_name: lastName, email, password, persona };
 
     try {
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const data = await res.json();
+      
+      // --- UPGRADED: Safe JSON parsing ---
+      const contentType = res.headers.get("content-type");
+      let data;
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await res.json();
+      } else {
+        // The server sent HTML instead of JSON
+        throw new Error(`Server Error (${res.status}): Please check Render logs. The server crashed.`);
+      }
+
       if (!res.ok) throw new Error(data.error || data.detail || "Authentication failed");
 
       localStorage.setItem("access_token", data.access);
@@ -708,7 +720,7 @@ function App() {
       }`}>
         <div className="flex flex-col items-center justify-center gap-3">
            <p className={`text-xs tracking-widest uppercase font-medium ${theme === 'dark' ? 'text-[#6B7280]' : 'text-[#9CA3AF]'}`}>
-            Viscora Nexus © {new Date().getFullYear()}
+             Built by Srijan Singh • Viscora Nexus © {new Date().getFullYear()}
            </p>
            <a
              href="https://github.com/SrijanSingh9/Viscora-Nexus"
