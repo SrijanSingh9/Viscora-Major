@@ -59,7 +59,7 @@ function App() {
 
   useEffect(() => {
     if (token) {
-      fetch("http://127.0.0.1:8000/api/profile/", {
+      fetch("https://viscora-backend.onrender.com/api/profile/", {
         headers: { "Authorization": `Bearer ${token}` }
       })
       .then(res => {
@@ -81,7 +81,7 @@ function App() {
 
   const fetchReflections = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/reflections/", {
+      const res = await fetch("https://viscora-backend.onrender.com/api/reflections/", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (res.ok) {
@@ -96,7 +96,7 @@ function App() {
   const handleAuth = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg("");
-    const url = isLoginView ? "http://127.0.0.1:8000/api/login/" : "http://127.0.0.1:8000/api/signup/";
+    const url = isLoginView ? "https://viscora-backend.onrender.com/api/login/" : "https://viscora-backend.onrender.com/api/signup/";
     const payload = isLoginView ? { username: email, password } : { first_name: firstName, last_name: lastName, email, password, persona };
 
     try {
@@ -114,7 +114,7 @@ function App() {
 
   const handleUpdatePersona = async () => {
     try {
-      await fetch("http://127.0.0.1:8000/api/profile/", {
+      await fetch("https://viscora-backend.onrender.com/api/profile/", {
         method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ persona: newPersona }),
       });
@@ -133,7 +133,7 @@ function App() {
     if (!finalContent.trim()) return;
     setIsAnalyzing(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/reflections/", {
+      const res = await fetch("https://viscora-backend.onrender.com/api/reflections/", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ content: finalContent, mood: finalMood }),
       });
@@ -152,14 +152,14 @@ function App() {
 
   const handleDeleteReflection = async (id: number) => {
     try {
-      await fetch(`http://127.0.0.1:8000/api/reflections/${id}/`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+      await fetch(`https://viscora-backend.onrender.com/api/reflections/${id}/`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
       setReflectionsHistory(reflectionsHistory.filter(ref => ref.id !== id));
     } catch (err) { console.error(err); }
   };
 
   const handleSaveEdit = async (id: number) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/reflections/${id}/`, {
+      const res = await fetch(`https://viscora-backend.onrender.com/api/reflections/${id}/`, {
         method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ content: editContent }),
       });
@@ -176,7 +176,7 @@ function App() {
     setIsAnalysisLoading(true);
     setAnalysisError("");
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/analysis/", {
+      const res = await fetch("https://viscora-backend.onrender.com/api/analysis/", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const data = await res.json();
@@ -210,7 +210,7 @@ function App() {
     setIsNexusTyping(true);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/chat/", {
+      const res = await fetch("https://viscora-backend.onrender.com/api/chat/", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ messages: newMessages }),
       });
