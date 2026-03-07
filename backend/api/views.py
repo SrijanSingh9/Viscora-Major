@@ -6,9 +6,52 @@ from rest_framework_simplejwt.tokens import RefreshToken
 import requests
 import json
 import re
+import os
 
 from .models import UserProfile, DailyReflection
 from .serializers import UserProfileSerializer, DailyReflectionSerializer
+
+# ==========================================
+# GEMINI API HELPER FUNCTION
+# ==========================================
+def call_gemini(prompt, system_instruction=None, json_mode=False):
+    # We will set this environment variable later when deploying!
+    # For local testing, you can temporarily replace os.environ.get(...) with "YOUR_ACTUAL_API_KEY"
+    api_key = os.environ.get("GEMINI_API_KEY") 
+    
+    if not api_key:
+        return "Error: GEMINI_API_KEY environment variable is not set."
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+
+    if system_instruction:
+        payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+    # Gemini JSON mode guarantees perfectly formatted JSON output
+    generation_config = {"temperature": 0.7}
+    if json_mode:
+        generation_config["temperature"] = 0.2
+        generation_config["responseMimeType"] = "application/json"
+
+    payload["generationConfig"] = generation_config
+
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            try:
+                return data['candidates'][0]['content']['parts'][0]['text'].strip()
+            except (KeyError, IndexError):
+                return "Error: Unexpected response structure from Nexus Core."
+        else:
+            return f"Error from Nexus Core: {response.text}"
+    except Exception as e:
+        return f"Error connecting to Nexus Core: {str(e)}"
+
 
 # ==========================================
 # AUTHENTICATION & PROFILE VIEWS
@@ -65,14 +108,14 @@ def get_user_profile(request):
 
 
 # ==========================================
-# REFLECTION ENGINE VIEWS (WITH OLLAMA)
+# REFLECTION ENGINE VIEWS (POWERED BY GEMINI)
 # ==========================================
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def reflections_view(request):
     if request.method == 'GET':
-        reflections = DailyReflection.objects.filter(user=request.user)
+        reflections = DailyReflection.objects.filter(user=request.user).order_by('-created_at')
         serializer = DailyReflectionSerializer(reflections, many=True)
         return Response(serializer.data)
 
@@ -106,16 +149,9 @@ Read their past entries (if any) and their current entry.
 Provide a very short, poetic, and motivating insight (maximum 2 sentences) that connects the dots of their thoughts.
 At the very end, on a new line, provide exactly 3 single-word themes or tags starting with a hashtag (e.g., #Growth #Clarity #Patience)."""
 
-        full_prompt = f"{system_prompt}\n\n{history_text}\n\nCurrent Entry: {content}\n\nYour Insight:"
+        prompt = f"Context of past entries:\n{history_text}\n\nCurrent Entry: {content}\n\nYour Insight:"
 
-        ai_insight = "The Nexus is quiet right now. (Make sure Ollama is running locally!)"
-        try:
-            ollama_payload = { "model": "gemma:2b", "prompt": full_prompt, "stream": False }
-            ollama_response = requests.post('http://127.0.0.1:11434/api/generate', json=ollama_payload, timeout=45)
-            if ollama_response.status_code == 200:
-                ai_insight = ollama_response.json().get('response', '').strip()
-        except requests.exceptions.RequestException as e:
-            print(f"Failed to connect to local LLM: {e}")
+        ai_insight = call_gemini(prompt, system_instruction=system_prompt)
 
         reflection = DailyReflection.objects.create(user=request.user, content=content, mood=mood, ai_insight=ai_insight)
         serializer = DailyReflectionSerializer(reflection)
@@ -152,15 +188,11 @@ Read their past entries (if any) and their current entry.
 Provide a very short, poetic, and motivating insight (maximum 2 sentences) that connects the dots of their thoughts.
 At the very end, on a new line, provide exactly 3 single-word themes or tags starting with a hashtag."""
 
-        full_prompt = f"{system_prompt}\n\n{history_text}\n\nCurrent Entry: {reflection.content}\n\nYour Insight:"
+        prompt = f"Context of past entries:\n{history_text}\n\nCurrent Entry: {reflection.content}\n\nYour Insight:"
 
-        try:
-            ollama_payload = { "model": "gemma:2b", "prompt": full_prompt, "stream": False }
-            ollama_response = requests.post('http://127.0.0.1:11434/api/generate', json=ollama_payload, timeout=45)
-            if ollama_response.status_code == 200:
-                reflection.ai_insight = ollama_response.json().get('response', '').strip()
-        except requests.exceptions.RequestException:
-            pass
+        new_insight = call_gemini(prompt, system_instruction=system_prompt)
+        if not new_insight.startswith("Error:"):
+            reflection.ai_insight = new_insight
 
         reflection.save()
         serializer = DailyReflectionSerializer(reflection)
@@ -190,26 +222,21 @@ def chat_view(request):
 
     system_prompt = f"""You are Viscora Nexus. You act as a very close, trusted friend and a wise mentor to the user, who is a {persona}.
 Your tone is warm, highly empathetic, deeply supportive, and conversational. Do not sound like a generic AI; sound like a human who deeply cares about their well-being and growth.
-Keep your responses relatively brief (1-3 sentences max) so it feels like a real-time text chat. Ask gentle, thoughtful follow-up questions to help them explore their feelings.Not just surface-level questions, but deep ones that show you are really trying to understand and connect the dots of their inner world.And keep the language simple and accessible, like a close friend would. Avoid being too philosophical or abstract in this context.
-Here are the user's most recent journal entries for background context:
+Keep your responses relatively brief (1-3 sentences max) so it feels like a real-time text chat. Ask gentle, thoughtful follow-up questions to help them explore their feelings.
+Here are the user's most recent journal entries for background context (do not mention them explicitly unless highly relevant):
 {reflections_context}"""
 
-    full_prompt = f"{system_prompt}\n\nHere is the ongoing conversation:\n{chat_history}\nNexus:"
+    prompt = f"Here is the ongoing conversation:\n{chat_history}\nNexus:"
 
-    try:
-        ollama_payload = { "model": "gemma:2b", "prompt": full_prompt, "stream": False }
-        ollama_response = requests.post('http://127.0.0.1:11434/api/generate', json=ollama_payload, timeout=45)
-        if ollama_response.status_code == 200:
-            ai_reply = ollama_response.json().get('response', '').strip()
-            return Response({"reply": ai_reply}, status=200)
-        else:
-            return Response({"reply": "My thoughts are a bit scattered right now. (Ollama Error)"}, status=500)
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to connect to local LLM: {e}")
-        return Response({"reply": "I feel a bit disconnected. (Make sure Ollama is running!)"}, status=500)
+    ai_reply = call_gemini(prompt, system_instruction=system_prompt)
+    
+    if ai_reply.startswith("Error:"):
+        return Response({"reply": "My thoughts are a bit scattered right now. Let's take a breath and try again."}, status=500)
+        
+    return Response({"reply": ai_reply}, status=200)
 
 
-# --- UPGRADED: DEEP ANALYSIS (SWOT + WWW + 5 Whys + Quote) ---
+# --- DEEP ANALYSIS (SWOT + WWW + 5 Whys + Quote) ---
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def deep_analysis_view(request):
@@ -221,18 +248,23 @@ def deep_analysis_view(request):
     entries_text = "\n".join([f"- {r.content}" for r in reflections])
     
     system_prompt = """You are Viscora Nexus. Perform a deep, intuitive psychological analysis based on the provided journal entries.
-You MUST output your response EXACTLY as a JSON object matching this structure. Do not include any extra text.
-{
-  "swot": {
+You must return a JSON object containing the exact schema requested."""
+
+    prompt = f"""Analyze these journal entries:
+{entries_text}
+
+Output a JSON object matching this exact structure:
+{{
+  "swot": {{
     "strengths": "One sentence strength.",
     "weaknesses": "One sentence weakness.",
     "opportunities": "One sentence opportunity.",
     "threats": "One sentence threat."
-  },
-  "www_ebi": {
+  }},
+  "www_ebi": {{
     "what_went_well": "One sentence on what went well.",
     "even_better_if": "One sentence on what could be improved."
-  },
+  }},
   "five_whys": [
     "1. Why [state a core challenge from the text]? Because [reason].",
     "2. Why [reason]? Because...",
@@ -241,28 +273,16 @@ You MUST output your response EXACTLY as a JSON object matching this structure. 
     "5. Why [previous answer]? [Root Cause]."
   ],
   "quote": "A relevant, inspiring famous quote."
-}"""
-
-    full_prompt = f"{system_prompt}\n\nRecent Entries:\n{entries_text}\n\nOutput JSON:"
+}}"""
     
-    try:
-        ollama_payload = {
-            "model": "gemma:2b", 
-            "prompt": full_prompt,
-            "stream": False
-        }
-        # Deep analysis takes more processing power, timeout increased to 630s
-        ollama_response = requests.post('http://127.0.0.1:11434/api/generate', json=ollama_payload, timeout=630)
-        
-        if ollama_response.status_code == 200:
-            ai_reply = ollama_response.json().get('response', '').strip()
-            # Extremely robust JSON extraction pattern
-            json_match = re.search(r'(\{.*\})', ai_reply, re.DOTALL)
-            if json_match:
-                analysis_data = json.loads(json_match.group(1))
-                return Response(analysis_data, status=200)
-            else:
-                return Response({"error": "Failed to parse Nexus analysis format."}, status=500)
-    except Exception as e:
-        print(f"Deep Analysis generation failed: {e}")
+    ai_reply = call_gemini(prompt, system_instruction=system_prompt, json_mode=True)
+    
+    if ai_reply.startswith("Error:"):
         return Response({"error": "Nexus connection interrupted or timed out."}, status=500)
+        
+    try:
+        # Gemini with json_mode=True guarantees raw JSON string
+        analysis_data = json.loads(ai_reply)
+        return Response(analysis_data, status=200)
+    except json.JSONDecodeError:
+        return Response({"error": "Failed to parse Nexus analysis format."}, status=500)
