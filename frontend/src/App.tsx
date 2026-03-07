@@ -720,7 +720,7 @@ function App() {
       }`}>
         <div className="flex flex-col items-center justify-center gap-3">
            <p className={`text-xs tracking-widest uppercase font-medium ${theme === 'dark' ? 'text-[#6B7280]' : 'text-[#9CA3AF]'}`}>
-             Built by Srijan Singh • Viscora Nexus © {new Date().getFullYear()}
+             Viscora Nexus © {new Date().getFullYear()}
            </p>
            <a
              href="https://github.com/SrijanSingh9/Viscora-Nexus"

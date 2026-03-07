@@ -22,7 +22,7 @@ def call_gemini(prompt, system_instruction=None, json_mode=False):
     if not api_key:
         return "Error: GEMINI_API_KEY environment variable is not set."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={api_key}"
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
