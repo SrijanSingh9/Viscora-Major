@@ -122,6 +122,7 @@ def reflections_view(request):
     elif request.method == 'POST':
         content = request.data.get('content')
         mood = request.data.get('mood')
+        language = request.data.get('language', 'English')
         
         if not content:
             return Response({"error": "Reflection content is required."}, status=400)
@@ -147,7 +148,8 @@ def reflections_view(request):
 {persona_context}
 Read their past entries (if any) and their current entry. 
 Provide a very short, poetic, and motivating insight (maximum 2 sentences) that connects the dots of their thoughts.
-At the very end, on a new line, provide exactly 3 single-word themes or tags starting with a hashtag (e.g., #Growth #Clarity #Patience)."""
+At the very end, on a new line, provide exactly 3 single-word themes or tags starting with a hashtag (e.g., #Growth #Clarity #Patience).
+IMPORTANT: Provide your entire response (both insight and tags) in {language}."""
 
         prompt = f"Context of past entries:\n{history_text}\n\nCurrent Entry: {content}\n\nYour Insight:"
 
@@ -172,6 +174,7 @@ def reflection_detail_view(request, pk):
         
     elif request.method == 'PATCH':
         reflection.content = request.data.get('content', reflection.content)
+        language = request.data.get('language', 'English')
         
         past_reflections = DailyReflection.objects.filter(
             user=request.user, created_at__lt=reflection.created_at
@@ -186,7 +189,8 @@ def reflection_detail_view(request, pk):
         system_prompt = f"""You are Viscora Nexus, an empathetic AI journal companion speaking to a {persona}. 
 Read their past entries (if any) and their current entry. 
 Provide a very short, poetic, and motivating insight (maximum 2 sentences) that connects the dots of their thoughts.
-At the very end, on a new line, provide exactly 3 single-word themes or tags starting with a hashtag."""
+At the very end, on a new line, provide exactly 3 single-word themes or tags starting with a hashtag.
+IMPORTANT: Provide your entire response (both insight and tags) in {language}."""
 
         prompt = f"Context of past entries:\n{history_text}\n\nCurrent Entry: {reflection.content}\n\nYour Insight:"
 
@@ -203,6 +207,7 @@ At the very end, on a new line, provide exactly 3 single-word themes or tags sta
 @permission_classes([IsAuthenticated])
 def chat_view(request):
     messages = request.data.get('messages', [])
+    language = request.data.get('language', 'English')
     if not messages:
         return Response({"error": "No messages provided."}, status=400)
 
@@ -224,7 +229,8 @@ def chat_view(request):
 Your tone is warm, highly empathetic, deeply supportive, and conversational. Do not sound like a generic AI; sound like a human who deeply cares about their well-being and growth.
 Keep your responses relatively brief (1-3 sentences max) so it feels like a real-time text chat. Ask gentle, thoughtful follow-up questions to help them explore their feelings.
 Here are the user's most recent journal entries for background context (do not mention them explicitly unless highly relevant):
-{reflections_context}"""
+{reflections_context}
+IMPORTANT: You must provide your response entirely in {language}."""
 
     prompt = f"Here is the ongoing conversation:\n{chat_history}\nNexus:"
 
@@ -234,7 +240,6 @@ Here are the user's most recent journal entries for background context (do not m
         return Response({"reply": "My thoughts are a bit scattered right now. Let's take a breath and try again."}, status=500)
         
     return Response({"reply": ai_reply}, status=200)
-
 
 # --- DEEP ANALYSIS (SWOT + WWW + 5 Whys + Quote) ---
 @api_view(['GET'])

@@ -7,6 +7,13 @@ function App() {
   
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
+  // Multilingual & Voice State
+  const [selectedLanguage, setSelectedLanguage] = useState("English");
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+  const [isListeningChat, setIsListeningChat] = useState(false);
+  const [isListeningReflection, setIsListeningReflection] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   // Form State
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -48,6 +55,64 @@ function App() {
     { role: 'nexus', text: 'I am here. What is on your mind today?' }
   ]);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  // Voice Assistant Initialization
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+    }
+  }, []);
+
+  const speakText = (text: string) => {
+    if (!isVoiceEnabled || !window.speechSynthesis) return;
+    const cleanText = text.replace(/[*#]/g, ''); // Remove markdown for speech
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    const langMap: Record<string, string> = { 
+      "English": "en-US", "Spanish": "es-ES", "French": "fr-FR", "German": "de-DE", "Portuguese": "pt-BR", "Japanese": "ja-JP",
+      "Hindi": "hi-IN", "Punjabi": "pa-IN", "Bengali": "bn-IN", "Marathi": "mr-IN", 
+      "Telugu": "te-IN", "Tamil": "ta-IN", "Gujarati": "gu-IN", "Urdu": "ur-IN", 
+      "Malayalam": "ml-IN", "Kannada": "kn-IN"
+    };
+    utterance.lang = langMap[selectedLanguage] || "en-US";
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const toggleListening = (target: 'chat' | 'reflection') => {
+    if (!recognitionRef.current) return alert("Speech recognition not supported in this browser.");
+    
+    const langMap: Record<string, string> = { 
+      "English": "en-US", "Spanish": "es-ES", "French": "fr-FR", "German": "de-DE", "Portuguese": "pt-BR", "Japanese": "ja-JP",
+      "Hindi": "hi-IN", "Punjabi": "pa-IN", "Bengali": "bn-IN", "Marathi": "mr-IN", 
+      "Telugu": "te-IN", "Tamil": "ta-IN", "Gujarati": "gu-IN", "Urdu": "ur-IN", 
+      "Malayalam": "ml-IN", "Kannada": "kn-IN"
+    };
+    recognitionRef.current.lang = langMap[selectedLanguage] || "en-US";
+
+    if (target === 'chat') {
+      if (isListeningChat) { recognitionRef.current.stop(); setIsListeningChat(false); return; }
+      setIsListeningChat(true);
+      recognitionRef.current.onresult = (event: any) => {
+        setChatInput((prev) => prev + " " + event.results[0][0].transcript);
+        setIsListeningChat(false);
+      };
+      recognitionRef.current.onerror = () => setIsListeningChat(false);
+      recognitionRef.current.onend = () => setIsListeningChat(false);
+      recognitionRef.current.start();
+    } else {
+      if (isListeningReflection) { recognitionRef.current.stop(); setIsListeningReflection(false); return; }
+      setIsListeningReflection(true);
+      recognitionRef.current.onresult = (event: any) => {
+        setReflectionInput((prev) => (prev ? prev + " " : "") + event.results[0][0].transcript);
+        setIsListeningReflection(false);
+      };
+      recognitionRef.current.onerror = () => setIsListeningReflection(false);
+      recognitionRef.current.onend = () => setIsListeningReflection(false);
+      recognitionRef.current.start();
+    }
+  };
 
   useEffect(() => {
     if (theme === "dark") {
@@ -97,20 +162,17 @@ function App() {
     e.preventDefault();
     setErrorMsg("");
     
-    // Ensure you replaced http://127.0.0.1:8000 with your exact Render URL (and keep the trailing slash!)
     const url = isLoginView ? "https://viscora-backend.onrender.com/api/login/" : "https://viscora-backend.onrender.com/api/signup/";
     const payload = isLoginView ? { username: email, password } : { first_name: firstName, last_name: lastName, email, password, persona };
 
     try {
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       
-      // --- UPGRADED: Safe JSON parsing ---
       const contentType = res.headers.get("content-type");
       let data;
       if (contentType && contentType.indexOf("application/json") !== -1) {
         data = await res.json();
       } else {
-        // The server sent HTML instead of JSON
         throw new Error(`Server Error (${res.status}): Please check Render logs. The server crashed.`);
       }
 
@@ -147,12 +209,12 @@ function App() {
     try {
       const res = await fetch("https://viscora-backend.onrender.com/api/reflections/", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ content: finalContent, mood: finalMood }),
+        body: JSON.stringify({ content: finalContent, mood: finalMood, language: selectedLanguage }),
       });
       if (res.ok) {
         const newReflection = await res.json();
         setReflectionsHistory([newReflection, ...reflectionsHistory]);
-        setSelectedDateFilter(null); // Clear filter to show the new entry immediately
+        setSelectedDateFilter(null);
         if (!customContent) {
           setReflectionInput("");
           setMood(null);
@@ -183,12 +245,11 @@ function App() {
     } catch (err) { console.error(err); }
   };
 
-  // Generate Advanced Deep Analysis
   const handleGenerateAnalysis = async () => {
     setIsAnalysisLoading(true);
     setAnalysisError("");
     try {
-      const res = await fetch("https://viscora-backend.onrender.com/api/analysis/", {
+      const res = await fetch(`https://viscora-backend.onrender.com/api/analysis/?language=${encodeURIComponent(selectedLanguage)}`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const data = await res.json();
@@ -224,16 +285,21 @@ function App() {
     try {
       const res = await fetch("https://viscora-backend.onrender.com/api/chat/", {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ messages: newMessages }),
+        body: JSON.stringify({ messages: newMessages, language: selectedLanguage }),
       });
       if (res.ok) {
         const data = await res.json();
         setChatMessages([...newMessages, { role: 'nexus', text: data.reply }]);
+        speakText(data.reply);
       } else {
-        setChatMessages([...newMessages, { role: 'nexus', text: "I'm having a little trouble connecting right now." }]);
+        const errorMsg = "I'm having a little trouble connecting right now.";
+        setChatMessages([...newMessages, { role: 'nexus', text: errorMsg }]);
+        speakText(errorMsg);
       }
     } catch (err) {
-      setChatMessages([...newMessages, { role: 'nexus', text: "I feel disconnected. Make sure Ollama is running!" }]);
+      const disconnectMsg = "I feel disconnected. Make sure Ollama is running!";
+      setChatMessages([...newMessages, { role: 'nexus', text: disconnectMsg }]);
+      speakText(disconnectMsg);
     } finally {
       setIsNexusTyping(false);
     }
@@ -259,7 +325,6 @@ function App() {
   ];
   const getMoodIcon = (moodId: string) => moodOptions.find(m => m.id === moodId)?.icon || '✨';
 
-  // Format Markdown
   const formatMarkdownText = (text: string) => {
     if (!text) return { __html: "" };
     let formatted = text
@@ -372,9 +437,40 @@ function App() {
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[800px] h-[400px] opacity-20 pointer-events-none blur-[100px] sm:blur-[120px] transition-all duration-1000 z-0 fixed"
            style={{ background: theme === 'dark' ? 'radial-gradient(circle, #5EEAD4 0%, transparent 70%)' : 'radial-gradient(circle, #6366F1 0%, transparent 70%)' }} />
 
-      <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`fixed top-4 right-4 sm:top-8 sm:right-8 p-3 rounded-full backdrop-blur-md transition-all duration-500 hover:scale-110 active:scale-95 z-50 ${theme === 'dark' ? 'bg-[#1D2230]/80 text-[#5EEAD4] hover:bg-[#2A3040] shadow-[0_0_15px_rgba(94,234,212,0.1)]' : 'bg-white/80 text-[#6366F1] hover:bg-[#F1F3F9] shadow-[0_4px_15px_rgba(0,0,0,0.05)]'}`}>
-        {theme === 'dark' ? '☀️' : '🌙'}
-      </button>
+      <div className="fixed top-4 right-4 sm:top-8 sm:right-8 flex items-center gap-2 sm:gap-3 z-50">
+        <select 
+          value={selectedLanguage} 
+          onChange={(e) => setSelectedLanguage(e.target.value)}
+          className={`p-2 sm:p-2.5 rounded-full text-[10px] sm:text-xs font-medium backdrop-blur-md outline-none cursor-pointer transition-all duration-300 appearance-none ${
+            theme === 'dark' 
+              ? 'bg-[#1D2230]/80 text-[#5EEAD4] border border-[#2A3040] hover:bg-[#2A3040] shadow-[0_0_15px_rgba(94,234,212,0.1)]' 
+              : 'bg-white/80 text-[#6366F1] border border-[#E3E6EF] hover:bg-[#F1F3F9] shadow-[0_4px_15px_rgba(0,0,0,0.05)]'
+          }`}
+        >
+          <option value="English">🇬🇧 EN</option>
+          <option value="Spanish">🇪🇸 ES</option>
+          <option value="French">🇫🇷 FR</option>
+          <option value="Japanese">🇯🇵 JA</option>
+          <option value="German">🇩🇪 DE</option>
+          <option value="Portuguese">🇧🇷 PT</option>
+          <optgroup label="India (Regional)">
+            <option value="Hindi">🇮🇳 Hindi</option>
+            <option value="Punjabi">🇮🇳 Punjabi</option>
+            <option value="Bengali">🇮🇳 Bengali</option>
+            <option value="Marathi">🇮🇳 Marathi</option>
+            <option value="Telugu">🇮🇳 Telugu</option>
+            <option value="Tamil">🇮🇳 Tamil</option>
+            <option value="Gujarati">🇮🇳 Gujarati</option>
+            <option value="Urdu">🇮🇳 Urdu</option>
+            <option value="Malayalam">🇮🇳 Malayalam</option>
+            <option value="Kannada">🇮🇳 Kannada</option>
+          </optgroup>
+        </select>
+        
+        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-2.5 sm:p-3 rounded-full backdrop-blur-md transition-all duration-500 hover:scale-110 active:scale-95 ${theme === 'dark' ? 'bg-[#1D2230]/80 text-[#5EEAD4] hover:bg-[#2A3040] shadow-[0_0_15px_rgba(94,234,212,0.1)]' : 'bg-white/80 text-[#6366F1] hover:bg-[#F1F3F9] shadow-[0_4px_15px_rgba(0,0,0,0.05)]'}`}>
+          {theme === 'dark' ? '☀️' : '🌙'}
+        </button>
+      </div>
 
       {/* --- FLOATING CHATBOT UI --- */}
       {token && profileData && (
@@ -383,7 +479,19 @@ function App() {
             <div className={`mb-4 w-[calc(100vw-2rem)] sm:w-[400px] max-h-[80vh] sm:h-[500px] flex flex-col rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 animate-fade-in-up border ${theme === 'dark' ? 'bg-[#161A23] border-[#2A3040]' : 'bg-white border-[#E3E6EF]'}`}>
               <div className={`p-4 flex justify-between items-center border-b ${theme === 'dark' ? 'bg-[#1D2230] border-[#2A3040]' : 'bg-[#F7F8FB] border-[#E3E6EF]'}`}>
                 <div className="flex items-center gap-2"><span className="text-xl">🌌</span><span className={`font-medium tracking-wide ${theme === 'dark' ? 'text-[#E6EAF2]' : 'text-[#1F2937]'}`}>Nexus Companion</span></div>
-                <button onClick={() => setIsChatOpen(false)} className={`p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-colors`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <button 
+                    onClick={() => {
+                      setIsVoiceEnabled(!isVoiceEnabled);
+                      if (isVoiceEnabled) window.speechSynthesis.cancel();
+                    }} 
+                    className={`p-1.5 rounded-md transition-colors ${isVoiceEnabled ? (theme === 'dark' ? 'text-[#5EEAD4]' : 'text-[#6366F1]') : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                    title={isVoiceEnabled ? "Voice Output On" : "Voice Output Off"}
+                  >
+                    {isVoiceEnabled ? <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg> : <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>}
+                  </button>
+                  <button onClick={() => setIsChatOpen(false)} className={`p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-colors`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                </div>
               </div>
               <div ref={chatScrollRef} className="flex-1 p-4 overflow-y-auto flex flex-col gap-4">
                 {chatMessages.map((msg, idx) => (
@@ -405,7 +513,14 @@ function App() {
               </div>
               <div className={`p-3 border-t flex flex-col gap-2 ${theme === 'dark' ? 'bg-[#1D2230] border-[#2A3040]' : 'bg-[#F7F8FB] border-[#E3E6EF]'}`}>
                 <div className="flex gap-2">
-                  <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()} placeholder="Type your thoughts..." className={`flex-1 p-2.5 rounded-xl text-sm border-none focus:ring-1 focus:outline-none ${theme === 'dark' ? 'bg-[#0F1117] focus:ring-[#5EEAD4]/50 text-white placeholder-[#6B7280]' : 'bg-white focus:ring-[#6366F1]/50 text-[#1F2937] placeholder-[#9CA3AF]'}`} />
+                  <button 
+                    onClick={() => toggleListening('chat')}
+                    className={`p-2.5 rounded-xl transition-all duration-300 ${isListeningChat ? 'bg-rose-500/20 text-rose-500 animate-pulse' : (theme === 'dark' ? 'bg-[#0F1117] text-[#6B7280] hover:text-[#5EEAD4]' : 'bg-white text-[#9CA3AF] hover:text-[#6366F1]')}`}
+                    title="Dictate message"
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                  </button>
+                  <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()} placeholder={isListeningChat ? "Listening..." : "Type your thoughts..."} className={`flex-1 p-2.5 rounded-xl text-sm border-none focus:ring-1 focus:outline-none ${theme === 'dark' ? 'bg-[#0F1117] focus:ring-[#5EEAD4]/50 text-white placeholder-[#6B7280]' : 'bg-white focus:ring-[#6366F1]/50 text-[#1F2937] placeholder-[#9CA3AF]'}`} />
                   <button onClick={handleSendChatMessage} disabled={!chatInput.trim()} className={`p-2.5 px-4 rounded-xl transition-all duration-300 disabled:opacity-50 ${theme === 'dark' ? 'bg-[#5EEAD4] text-[#0F1117] hover:bg-[#A78BFA]' : 'bg-[#6366F1] text-white hover:bg-[#22D3EE]'}`}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                   </button>
@@ -491,7 +606,16 @@ function App() {
 
                   {/* Reflection Journal Input Area */}
                   <div className="relative z-30">
-                    <textarea value={reflectionInput} onChange={(e) => setReflectionInput(e.target.value)} placeholder="What is on your mind today? Type your reflection here..." disabled={isAnalyzing} className={`w-full min-h-[140px] sm:min-h-[160px] p-4 sm:p-6 rounded-2xl resize-y transition-all duration-500 outline-none font-['Source_Serif_4'] text-base sm:text-lg ${theme === 'dark' ? 'bg-[#0F1117] border border-[#2A3040] text-[#E6EAF2] placeholder-[#4B5563] focus:border-[#5EEAD4]/50 focus:shadow-[0_0_20px_rgba(94,234,212,0.05)]' : 'bg-[#F7F8FB] border border-[#E3E6EF] text-[#1F2937] placeholder-[#9CA3AF] focus:border-[#6366F1]/50 focus:shadow-[0_4px_20px_rgba(99,102,241,0.05)]'}`} />
+                    <div className="relative">
+                      <textarea value={reflectionInput} onChange={(e) => setReflectionInput(e.target.value)} placeholder={isListeningReflection ? "Listening... Speak your thoughts." : "What is on your mind today? Type your reflection here..."} disabled={isAnalyzing} className={`w-full min-h-[140px] sm:min-h-[160px] p-4 sm:p-6 pb-12 rounded-2xl resize-y transition-all duration-500 outline-none font-['Source_Serif_4'] text-base sm:text-lg ${theme === 'dark' ? 'bg-[#0F1117] border border-[#2A3040] text-[#E6EAF2] placeholder-[#4B5563] focus:border-[#5EEAD4]/50 focus:shadow-[0_0_20px_rgba(94,234,212,0.05)]' : 'bg-[#F7F8FB] border border-[#E3E6EF] text-[#1F2937] placeholder-[#9CA3AF] focus:border-[#6366F1]/50 focus:shadow-[0_4px_20px_rgba(99,102,241,0.05)]'}`} />
+                      <button 
+                        onClick={() => toggleListening('reflection')}
+                        className={`absolute bottom-4 left-4 p-2.5 rounded-full transition-all duration-300 shadow-md ${isListeningReflection ? 'bg-rose-500 text-white animate-pulse' : (theme === 'dark' ? 'bg-[#2A3040] text-[#A4A9B6] hover:text-[#5EEAD4]' : 'bg-white text-[#9CA3AF] hover:text-[#6366F1]')}`}
+                        title="Dictate reflection"
+                      >
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                      </button>
+                    </div>
                     <div className="flex justify-end mt-4">
                       <button onClick={() => submitReflection()} disabled={isAnalyzing || !reflectionInput.trim()} className={`px-4 sm:px-6 py-3 rounded-xl text-sm sm:text-base font-medium tracking-wide transition-all duration-500 flex items-center gap-2 ${isAnalyzing ? 'opacity-70 cursor-wait' : 'hover:scale-105 active:scale-95 cursor-pointer'} ${theme === 'dark' ? 'bg-gradient-to-r from-[#5EEAD4] to-[#A78BFA] text-[#0F1117] hover:shadow-[0_0_20px_rgba(94,234,212,0.3)]' : 'bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white hover:shadow-[0_8px_20px_rgba(99,102,241,0.3)]'} disabled:grayscale disabled:hover:scale-100 disabled:shadow-none`}>
                         {isAnalyzing ? <><div className="w-4 h-4 rounded-full border-2 border-[#0F1117] dark:border-white border-t-transparent animate-spin"></div>Analyzing...</> : 'Process Reflection'}
