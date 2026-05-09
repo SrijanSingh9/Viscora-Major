@@ -31,4 +31,8 @@ The application separates the frontend presentation layer from the backend busin
 * Python 3.10+
 * Node.js 18+
 * PostgreSQL
-* (Optional) Ollama or similar local LLM runner for Gemma/Qwen
+
+
+## 🔗 Just go to link 
+### We kindly request you to use it for at least 5 days to explore it properly:  
+[Visit Viscora Nexus](https://viscora-nexus.vercel.app/)
