@@ -18,7 +18,7 @@ Viscora Nexus leverages a modern, decoupled architecture for maximum scalability
 * **Frontend:** Vite (for lightning-fast HMR and optimized builds)
 * **Backend:** Django (Python-based, providing a secure and scalable RESTful API)
 * **Database:** PostgreSQL (Robust relational data management for complex user profiles and history)
-* **AI Integration:**Gemini
+* **AI Integration:** Gemini
 
 ## 📐 Architecture
 
@@ -31,6 +31,7 @@ The application separates the frontend presentation layer from the backend busin
 * Python 3.10+
 * Node.js 18+
 * PostgreSQL
+* API file for running offline (locally)
 
 
 ## 🔗 Just go to link 
